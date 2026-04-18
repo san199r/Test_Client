@@ -80,30 +80,42 @@ class InvestorApp(BaseModel):
     regions: str
 
 def send_email(to_email: str, subject: str, body: str):
-    """Sends a professional email using the stored credentials."""
+    """Sends a professional email using the stored credentials with robust connection handling."""
     user = os.getenv("EMAIL_USER")
     password = os.getenv("EMAIL_PASSWORD")
     server_addr = os.getenv("EMAIL_SMTP_SERVER")
-    port = int(os.getenv("EMAIL_SMTP_PORT", 465))
+    port_str = os.getenv("EMAIL_SMTP_PORT", "465")
+    port = int(port_str)
 
     if not all([user, password, server_addr]):
-        print("Email credentials not fully configured. Skipping email.")
+        print("Email configuration missing. Skipping email.")
         return
 
     msg = MIMEMultipart()
     msg['From'] = f"Crown Ridge Land Holdings <{user}>"
     msg['To'] = to_email
     msg['Subject'] = subject
-
     msg.attach(MIMEText(body, 'plain'))
 
     try:
-        with smtplib.SMTP_SSL(server_addr, port) as server:
-            server.login(user, password)
-            server.send_message(msg)
-        print(f"Email sent to {to_email}: {subject}")
+        import ssl
+        context = ssl.create_default_context()
+        
+        if port == 465:
+            # Traditional SSL
+            with smtplib.SMTP_SSL(server_addr, port, context=context) as server:
+                server.login(user, password)
+                server.send_message(msg)
+        else:
+            # STARTTLS (usually port 587)
+            with smtplib.SMTP(server_addr, port) as server:
+                server.starttls(context=context)
+                server.login(user, password)
+                server.send_message(msg)
+                
+        print(f"SUCCESS: Email sent to {to_email}")
     except Exception as e:
-        print(f"Failed to send email to {to_email}: {e}")
+        print(f"CRITICAL EMAIL FAILURE to {to_email}: {e}")
 
 @app.post("/api/seller")
 async def handle_seller_lead(background_tasks: BackgroundTasks, lead: SellerLead):

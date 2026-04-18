@@ -1,0 +1,11 @@
+# Cloudflare Tunnel Configuration Template
+# Replace <tunnel-id> with the ID generated after running 'cloudflared tunnel create'
+# Replace <YourUser> with your Windows username
+
+tunnel: <tunnel-id>
+credentials-file: C:\Users\<YourUser>\.cloudflared\<tunnel-id>.json
+
+ingress:
+  - hostname: crownridge.yourdomain.com
+    service: http://localhost:8001
+  - service: http_status:404

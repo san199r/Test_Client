@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: crown-ridge-holdings
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python backend/main.py
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      # Add placeholders for your .env variables
+      - key: EMAIL_SMTP_SERVER
+        sync: false
+      - key: EMAIL_SMTP_PORT
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: NOTIFICATION_RECEIVER
+        sync: false

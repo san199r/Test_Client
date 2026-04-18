@@ -79,8 +79,8 @@ class InvestorApp(BaseModel):
     capacity: str
     regions: str
 
-def send_email(to_email: str, subject: str, body: str):
-    """Sends a professional email using the stored credentials with robust connection handling."""
+def send_email(to_email: str, subject: str, plain_body: str, html_body: str = None):
+    """Sends a professional email with support for HTML and Plain Text."""
     user = os.getenv("EMAIL_USER")
     password = os.getenv("EMAIL_PASSWORD")
     server_addr = os.getenv("EMAIL_SMTP_SERVER")
@@ -91,31 +91,69 @@ def send_email(to_email: str, subject: str, body: str):
         print("Email configuration missing. Skipping email.")
         return
 
-    msg = MIMEMultipart()
+    # Create root message
+    msg = MIMEMultipart("alternative")
     msg['From'] = f"Crown Ridge Land Holdings <{user}>"
     msg['To'] = to_email
     msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'plain'))
+
+    # Attach both parts (text first, then HTML as preferred)
+    msg.attach(MIMEText(plain_body, 'plain'))
+    if html_body:
+        msg.attach(MIMEText(html_body, 'html'))
 
     try:
         import ssl
         context = ssl.create_default_context()
-        
         if port == 465:
-            # Traditional SSL
             with smtplib.SMTP_SSL(server_addr, port, context=context) as server:
                 server.login(user, password)
                 server.send_message(msg)
         else:
-            # STARTTLS (usually port 587)
             with smtplib.SMTP(server_addr, port) as server:
                 server.starttls(context=context)
                 server.login(user, password)
                 server.send_message(msg)
-                
-        print(f"SUCCESS: Email sent to {to_email}")
+        print(f"SUCCESS: Professional email sent to {to_email}")
     except Exception as e:
         print(f"CRITICAL EMAIL FAILURE to {to_email}: {e}")
+
+def get_html_template(title: str, content: str):
+    """Generates a professional HTML email wrapper."""
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            .email-container {{ font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; }}
+            .header {{ background-color: #0d1b2a; padding: 30px; text-align: center; color: white; }}
+            .logo {{ max-width: 150px; margin-bottom: 20px; }}
+            .body {{ padding: 40px; color: #333; line-height: 1.6; background-color: #ffffff; }}
+            .footer {{ background-color: #f4f4f4; padding: 20px; text-align: center; color: #777; font-size: 12px; }}
+            .btn {{ display: inline-block; padding: 12px 25px; background-color: #a37c40; color: white; text-decoration: none; border-radius: 4px; margin-top: 20px; }}
+            h1 {{ color: #0d1b2a; margin-top: 0; font-family: 'Georgia', serif; }}
+        </style>
+    </head>
+    <body style="margin:0; padding:20px; background-color: #f9f9f9;">
+        <div class="email-container">
+            <div class="header">
+                <img src="https://crown-ridge-holdings.onrender.com/assets/logo.jpg" alt="Crown Ridge Logo" class="logo">
+                <div style="font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: #a37c40;">Crown Ridge Land Holdings, LLC</div>
+            </div>
+            <div class="body">
+                <h1>{title}</h1>
+                {content}
+                <p>Best regards,<br><strong>The Crown Ridge Team</strong></p>
+                <a href="https://crown-ridge-holdings.onrender.com" class="btn">View Our Portal</a>
+            </div>
+            <div class="footer">
+                &copy; {{datetime.now().year}} Crown Ridge Land Holdings, LLC. All rights reserved.<br>
+                216-532-5358 | info@crownridgeland.com
+            </div>
+        </div>
+    </body>
+    </html>
+    """
 
 @app.post("/api/seller")
 async def handle_seller_lead(background_tasks: BackgroundTasks, lead: SellerLead):
@@ -130,35 +168,25 @@ async def handle_seller_lead(background_tasks: BackgroundTasks, lead: SellerLead
         conn.close()
 
         # Send Background Notification
-        email_body = f"""
-NEW SELLER LEAD RECEIVED
-------------------------
-Name: {lead.name}
-Phone: {lead.phone}
-Email: {lead.email}
-Location: {lead.location}
-Acreage: {lead.acreage}
-APN: {lead.apn}
-Reason: {lead.reason}
-Submitted At: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        admin_body = f"NEW SELLER LEAD: {lead.name} ({lead.location})\nPhone: {lead.phone}\nEmail: {lead.email}\nAPN: {lead.apn}\nReason: {lead.reason}"
+        background_tasks.add_task(send_email, os.getenv("NOTIFICATION_RECEIVER"), f"URGENT: New Seller Lead - {lead.name}", admin_body)
+
+        # Send Client Confirmation (Professional HTML)
+        html_content = f"""
+        <p>Dear {lead.name},</p>
+        <p>Thank you for contacting <strong>Crown Ridge Land Holdings, LLC</strong> regarding your property in <strong>{lead.location}</strong>.</p>
+        <p>We have received your inquiry and our acquisitions team is currently performing a preliminary valuation of your parcel (APN: {lead.apn}). We pride ourselves on fair, cash offers and quick closings.</p>
+        <p><strong>What happens next?</strong></p>
+        <ul>
+            <li>Our team will review the property data and market comps.</li>
+            <li>You can expect a phone call or email from one of our representatives within the next 48 hours.</li>
+            <li>If the property meets our criteria, we will present you with a firm cash offer.</li>
+        </ul>
         """
-        background_tasks.add_task(send_email, os.getenv("NOTIFICATION_RECEIVER"), f"URGENT: New Seller Lead - {lead.name}", email_body)
-
-        # Send Client Confirmation
-        client_body = f"""
-Dear {lead.name},
-
-Thank you for contacting Crown Ridge Land Holdings, LLC regarding your property in {lead.location}.
-
-We have received your request for a cash offer and our acquisitions team is currently performing a preliminary valuation of your parcel. You can expect to hear from one of our representatives within the next 48 hours.
-
-Best regards,
-
-The Crown Ridge Team
-216-532-5358
-info@crownridgeland.com
-        """
-        background_tasks.add_task(send_email, lead.email, "We've Received Your Property Inquiry - Crown Ridge Land Holdings", client_body)
+        plain_content = f"Dear {lead.name}, Thank you for your inquiry regarding your property in {lead.location}. Our team will review the data and contact you within 48 hours."
+        
+        email_html = get_html_template("Property Inquiry Received", html_content)
+        background_tasks.add_task(send_email, lead.email, "We've Received Your Property Inquiry - Crown Ridge Land Holdings", plain_content, email_html)
 
         return {"status": "success", "message": "Lead captured"}
     except Exception as e:
@@ -177,31 +205,21 @@ async def handle_investor_app(background_tasks: BackgroundTasks, app_data: Inves
         conn.close()
 
         # Send Background Notification
-        email_body = f"""
-NEW INVESTOR APPLICATION
---------------------------
-Institution/Name: {app_data.institution}
-Email: {app_data.email}
-Capacity: {app_data.capacity}
-Regions: {app_data.regions}
-Submitted At: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        admin_body = f"NEW INVESTOR APPLICATION: {app_data.institution}\nEmail: {app_data.email}\nCapacity: {app_data.capacity}\nRegions: {app_data.regions}"
+        background_tasks.add_task(send_email, os.getenv("NOTIFICATION_RECEIVER"), f"Network Update: New Investor - {app_data.institution}", admin_body)
+
+        # Send Client Confirmation (Professional HTML)
+        html_content = f"""
+        <p>Hello,</p>
+        <p>Thank you for your application to join the <strong>Crown Ridge Land Holdings Investor Network</strong>.</p>
+        <p>Your credentials and capital capacity (Region: {app_data.regions}) are currently being vetted by our institutional relations team. We maintain a selective network to ensure the highest quality off-market inventory for our partners.</p>
+        <p>Once your application is approved, you will receive a follow-up email with instructions on how to access our exclusive inventory portal and secure deal flow.</p>
+        <p>We look forward to potentially working with <strong>{app_data.institution}</strong>.</p>
         """
-        background_tasks.add_task(send_email, os.getenv("NOTIFICATION_RECEIVER"), f"Network Update: New Investor - {app_data.institution}", email_body)
-
-        # Send Client Confirmation
-        client_body = f"""
-Hello,
-
-Thank you for your application to join the Crown Ridge Land Holdings Investor Network.
-
-Your credentials and capital capacity are currently being vetted by our institutional relations team. Once approved, you will receive a follow-up email with instructions on how to access our exclusive off-market inventory portal.
-
-Best regards,
-
-Investor Relations
-Crown Ridge Land Holdings, LLC
-        """
-        background_tasks.add_task(send_email, app_data.email, "Investor Network Application Received - Crown Ridge", client_body)
+        plain_content = f"Hello, thank you for your application to the Crown Ridge Investor Network. Our team is currently vetting your application and will contact you shortly."
+        
+        email_html = get_html_template("Investor Network Application", html_content)
+        background_tasks.add_task(send_email, app_data.email, "Investor Network Application Received - Crown Ridge", plain_content, email_html)
 
         return {"status": "success", "message": "Application received"}
     except Exception as e:
